@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root{--navy:#17365d;--blue:#1f4e78;--bg:#f3f6fb;--line:#e2e8f0;--text:#1f2937;--muted:#64748b;--green:#16834a}
+    *{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:var(--bg);color:var(--text)}
+    .hidden{display:none!important}.login-wrap{min-height:100vh;display:grid;place-items:center;padding:20px}
+    .login{background:#fff;width:min(420px,100%);padding:30px;border-radius:16px;box-shadow:0 12px 35px #17365d18}
+    h1{font-size:22px;margin:0 0 6px;color:var(--navy)}.sub{color:var(--muted);font-size:13px;margin-bottom:22px}
+    label{display:block;font-size:12px;font-weight:bold;margin:12px 0 6px;color:#475569}
+    input,select{width:100%;padding:11px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;background:#fff}
+    button{border:0;border-radius:8px;padding:10px 14px;background:var(--blue);color:#fff;font-weight:bold;cursor:pointer}
+    button.secondary{background:#e8eef6;color:var(--navy)}button.danger{background:#b42318}
+    .app{min-height:100vh}.top{background:var(--navy);color:#fff;padding:15px 22px;display:flex;justify-content:space-between;align-items:center;gap:12px}
+    .top strong{font-size:17px}.top small{display:block;color:#cbd5e1;margin-top:4px}
+    .layout{display:grid;grid-template-columns:220px 1fr;min-height:calc(100vh - 62px)}
+    nav{background:#fff;border-right:1px solid var(--line);padding:16px}
+    nav button{display:block;width:100%;text-align:left;background:transparent;color:#334155;margin:4px 0}
+    nav button.active,nav button:hover{background:#eaf1f8;color:var(--navy)}
+    main{padding:22px;min-width:0}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:18px}
+    .card,.panel{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px}
+    .metric{font-size:23px;font-weight:bold;margin-top:8px;color:var(--navy)}.muted{color:var(--muted);font-size:12px}
+    .panel{margin-bottom:16px}.panel h2{font-size:17px;margin:0 0 14px}
+    .row{display:flex;gap:10px;align-items:end;flex-wrap:wrap}.field{flex:1;min-width:150px}
+    table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:10px;border-bottom:1px solid var(--line);text-align:left}th{background:#f8fafc;color:#475569}
+    .table-wrap{overflow:auto}.right{text-align:right}.pill{display:inline-block;padding:4px 8px;border-radius:20px;background:#fff4d6;color:#8a5b00;font-size:11px}
+    .message{margin-top:12px;font-size:13px;color:#b42318}.success{color:var(--green)}
+    .cart-line{display:grid;grid-template-columns:1fr 70px 100px 30px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}
+    .cart-line input{padding:7px}.total{font-size:20px;font-weight:bold;color:var(--navy)}
+    @media(max-width:760px){.layout{grid-template-columns:1fr}nav{display:flex;overflow:auto;border-right:0;border-bottom:1px solid var(--line);gap:5px;padding:8px}nav button{white-space:nowrap;width:auto;margin:0}main{padding:12px}.top{padding:12px}.cart-line{grid-template-columns:1fr 55px 85px 25px}}
+  </style>
+</head>
+<body>
+<div id="loginView" class="login-wrap">
+  <div class="login">
+    <h1>Koperasi Sekolah</h1><div class="sub">Sistem penjualan dan persediaan ATK</div>
+    <label>Username</label><input id="username" autocomplete="username" placeholder="Masukkan username">
+    <label>Password</label><input id="password" type="password" autocomplete="current-password" placeholder="Masukkan password">
+    <div style="margin-top:18px"><button style="width:100%" onclick="doLogin()">Masuk</button></div>
+    <div id="loginMsg" class="message"></div>
+    <div class="muted" style="margin-top:16px">Akun awal tersedia di file petunjuk. Ganti password setelah login pertama.</div>
+  </div>
+</div>
+<div id="appView" class="app hidden">
+  <header class="top"><div><strong>KOPERASI SEKOLAH</strong><small id="userInfo">Sistem Penjualan ATK</small></div><button class="secondary" onclick="doLogout()">Keluar</button></header>
+  <div class="layout">
+    <nav id="nav"></nav>
+    <main id="main"></main>
+  </div>
+</div>
+<script>
+let TOKEN='', USER=null, PRODUCTS=[], CART=[], CURRENT='dashboard';
+const money=n=>'Rp '+Number(n||0).toLocaleString('id-ID');
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function call(fn,...args){return new Promise((resolve,reject)=>google.script.run.withSuccessHandler(resolve).withFailureHandler(e=>reject(new Error(e.message||e)))[fn](...args))}
+async function doLogin(){
+  const msg=document.getElementById('loginMsg');msg.textContent='Memeriksa akun...';
+  try{const r=await call('login',document.getElementById('username').value,document.getElementById('password').value);TOKEN=r.token;USER=r.user;await loadApp()}
+  catch(e){msg.textContent=e.message}
+}
+async function loadApp(){
+  document.getElementById('loginView').classList.add('hidden');document.getElementById('appView').classList.remove('hidden');
+  document.getElementById('userInfo').textContent=USER.nama+' • '+USER.role.toUpperCase();
+  PRODUCTS=await call('listProducts',TOKEN,'');renderNav();await showPage('dashboard');
+}
+function renderNav(){
+  const items=[['dashboard','▦ Dashboard'],['kasir','▣ Kasir'],['barang','▤ Data Barang']];
+  if(USER.role==='admin')items.push(['masuk','＋ Barang Masuk'],['laporan','▧ Laporan']);
+  document.getElementById('nav').innerHTML=items.map(([id,label])=>`<button class="${CURRENT===id?'active':''}" onclick="showPage('${id}')">${label}</button>`).join('');
+}
+async function showPage(page){
+  CURRENT=page;renderNav();const m=document.getElementById('main');m.innerHTML='<div class="panel">Memuat...</div>';
+  try{
+    if(page==='dashboard')return renderDashboard(await call('getDashboard',TOKEN));
+    if(page==='barang')return renderProducts();
+    if(page==='kasir')return renderCashier();
+    if(page==='masuk')return renderStockIn();
+    if(page==='laporan')return renderReports();
+  }catch(e){m.innerHTML=`<div class="panel message">${esc(e.message)}</div>`}
+}
+function renderDashboard(d){
+  document.getElementById('main').innerHTML=`
+  <h2>Dashboard</h2><div class="cards">
+    <div class="card"><div class="muted">Penjualan hari ini</div><div class="metric">${money(d.todayTotal)}</div></div>
+    <div class="card"><div class="muted">Transaksi hari ini</div><div class="metric">${d.todayCount}</div></div>
+    <div class="card"><div class="muted">Penjualan bulan ini</div><div class="metric">${money(d.monthTotal)}</div></div>
+    <div class="card"><div class="muted">Barang aktif</div><div class="metric">${d.productCount}</div></div>
+    <div class="card"><div class="muted">Stok perlu diperiksa</div><div class="metric">${d.lowStock}</div></div>
+  </div><div class="panel"><h2>Informasi</h2><p class="muted">Gunakan menu Kasir untuk mencatat penjualan. Stok akan berkurang otomatis setelah transaksi berhasil.</p></div>`;
+}
+function renderProducts(){
+  document.getElementById('main').innerHTML=`<div class="row" style="justify-content:space-between"><h2>Data Barang ATK</h2>${USER.role==='admin'?'<button onclick="productForm()">＋ Tambah Barang</button>':''}</div>
+  <div class="panel"><div class="row"><div class="field"><label>Cari kode / nama / merek</label><input id="searchProduct" placeholder="Contoh: KATK-PN atau pulpen" oninput="filterProducts()"></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Kode</th><th>Nama Barang</th><th>Kategori</th><th>Harga Jual</th><th>Stok</th><th>Status Stok</th></tr></thead><tbody id="productRows"></tbody></table></div></div>`;
+  fillProductRows(PRODUCTS);
+}
+function fillProductRows(arr){document.getElementById('productRows').innerHTML=arr.map(p=>`<tr><td>${esc(p.kode)}</td><td>${esc(p.nama)}<div class="muted">${esc(p.merek)}</div></td><td>${esc(p.kategori)}</td><td>${money(p.hargaJual)}</td><td>${p.stok} ${esc(p.satuan)}</td><td>${p.stok<=p.stokMinimum?'<span class="pill">Stok minimum</span>':'Aman'}</td></tr>`).join('')||'<tr><td colspan="6">Barang tidak ditemukan.</td></tr>'}
+function filterProducts(){const q=document.getElementById('searchProduct').value.toLowerCase();fillProductRows(PRODUCTS.filter(p=>(p.kode+' '+p.nama+' '+p.merek).toLowerCase().includes(q)))}
+function productForm(){
+  const kode=prompt('Kode barang (contoh KATK-PN041):');if(!kode)return;
+  const nama=prompt('Nama barang:');if(!nama)return;
+  const kategori=prompt('Kategori:','ATK')||'ATK';
+  const satuan=prompt('Satuan:','Pcs')||'Pcs';
+  const hargaBeli=prompt('Harga beli (angka):','0')||'0';
+  const hargaJual=prompt('Harga jual (angka):','0')||'0';
+  const merek=prompt('Merek / varian (opsional):','')||'';
+  call('saveProduct',TOKEN,{kode,nama,kategori,satuan,hargaBeli,hargaJual,merek,stok:0,stokMinimum:0,status:'Aktif'})
+    .then(async()=>{PRODUCTS=await call('listProducts',TOKEN,'');renderProducts()}).catch(e=>alert(e.message));
+}
+function renderCashier(){
+  document.getElementById('main').innerHTML=`<h2>Kasir / Penjualan</h2><div class="panel"><div class="row"><div class="field"><label>Cari barang</label><input id="cashSearch" placeholder="Ketik kode atau nama barang" oninput="searchCashItems()"></div></div><div id="cashResults" class="table-wrap"></div></div>
+  <div class="panel"><h2>Keranjang</h2><div id="cartRows"></div><div class="row" style="margin-top:14px"><div class="field"><label>Diskon (Rp)</label><input id="discount" type="number" min="0" value="0" oninput="updateCartTotal()"></div><div class="field"><label>Metode pembayaran</label><select id="method"><option>Tunai</option><option>QRIS</option><option>Transfer</option></select></div><div class="field"><label>Uang diterima (Rp)</label><input id="paid" type="number" min="0" value="0" oninput="updateCartTotal()"></div></div><p>Total: <span class="total" id="cartTotal">Rp 0</span></p><p class="muted" id="change">Kembalian: Rp 0</p><button onclick="finishSale()">Selesaikan Transaksi</button><div id="saleMsg" class="message"></div></div>`;
+  searchCashItems();drawCart();
+}
+let cashSearchRequest=0;
+async function searchCashItems(){
+  const input=document.getElementById('cashSearch');
+  const el=document.getElementById('cashResults');
+  if(!input || !el)return;
+  const q=input.value.trim();
+  const requestId=++cashSearchRequest;
+  if(!q){
+    const found=PRODUCTS.slice(0,30);
+    renderCashResults(found,el);
+    return;
+  }
+  el.innerHTML='<div class="muted" style="padding:10px">Mencari barang...</div>';
+  try{
+    const results=await call('listProducts',TOKEN,q);
+    if(requestId!==cashSearchRequest)return;
+    const found=results.slice(0,30);
+    renderCashResults(found,el);
+  }catch(e){
+    if(requestId===cashSearchRequest)el.innerHTML=`<div class="message">${esc(e.message)}</div>`;
+  }
+}
+function renderCashResults(found,el){
+  if(!el)return;
+  el.innerHTML='<table><thead><tr><th>Barang</th><th>Harga</th><th>Stok</th><th></th></tr></thead><tbody>'+
+    found.map(p=>{const ready=p.stok>0&&p.hargaJual>0;const status=p.stok<=0?'Stok habis':(p.hargaJual<=0?'Harga belum diisi':'Tersedia');return `<tr><td>${esc(p.nama)}<div class="muted">${esc(p.kode)}${p.merek?' • '+esc(p.merek):''}</div></td><td>${p.hargaJual>0?money(p.hargaJual):'Belum diatur'}</td><td>${p.stok} ${esc(p.satuan)}<div class="muted">${status}</div></td><td><button ${ready?'':'disabled title="Isi harga dan stok terlebih dahulu"'} onclick="addCart('${esc(p.kode)}')">Tambah</button></td></tr>`}).join('')+
+    (found.length?'':'<tr><td colspan="4">Barang tidak ditemukan.</td></tr>')+
+    '</tbody></table>';
+}
+function addCart(code){const p=PRODUCTS.find(x=>x.kode===code);if(!p)return;const old=CART.find(x=>x.kode===code);if(old){if(old.qty>=p.stok)return alert('Jumlah melebihi stok.');old.qty++}else CART.push({kode:code,nama:p.nama,harga:p.hargaJual,qty:1,stok:p.stok});drawCart()}
+function drawCart(){
+  const el=document.getElementById('cartRows');if(!el)return;
+  el.innerHTML=CART.map((x,i)=>`<div class="cart-line"><div>${esc(x.nama)}<div class="muted">${money(x.harga)} / pcs</div></div><input type="number" min="1" max="${x.stok}" value="${x.qty}" onchange="setQty(${i},this.value)"><strong>${money(x.harga*x.qty)}</strong><button class="danger" onclick="removeCart(${i})">×</button></div>`).join('')||'<p class="muted">Keranjang masih kosong.</p>';updateCartTotal();
+}
+function setQty(i,v){const q=Math.max(1,Math.min(CART[i].stok,Math.floor(Number(v)||1)));CART[i].qty=q;drawCart()}
+function removeCart(i){CART.splice(i,1);drawCart()}
+function updateCartTotal(){const subtotal=CART.reduce((s,x)=>s+x.qty*x.harga,0);const disc=Math.max(0,Math.min(subtotal,Number(document.getElementById('discount')?.value)||0));const total=subtotal-disc;const paid=Number(document.getElementById('paid')?.value)||0;const t=document.getElementById('cartTotal');if(t)t.textContent=money(total);const c=document.getElementById('change');if(c)c.textContent='Kembalian: '+money(Math.max(0,paid-total))}
+async function finishSale(){
+  const msg=document.getElementById('saleMsg');msg.textContent='Memproses transaksi...';
+  try{const r=await call('checkout',TOKEN,{items:CART.map(x=>({kode:x.kode,qty:x.qty})),diskon:document.getElementById('discount').value,bayar:document.getElementById('paid').value,metode:document.getElementById('method').value});
+    alert('Transaksi berhasil: '+r.id+'\nTotal: '+money(r.total)+'\nKembalian: '+money(r.kembalian));
+    CART=[];PRODUCTS=await call('listProducts',TOKEN,'');renderCashier();
+  }catch(e){msg.textContent=e.message}
+}
+function renderStockIn(){
+  document.getElementById('main').innerHTML=`<h2>Barang Masuk</h2><div class="panel"><label>Pilih barang</label><select id="inCode">${PRODUCTS.map(p=>`<option value="${esc(p.kode)}">${esc(p.kode)} - ${esc(p.nama)} (stok ${p.stok})</option>`).join('')}</select><div class="row"><div class="field"><label>Jumlah masuk</label><input id="inQty" type="number" min="1" value="1"></div><div class="field"><label>Harga beli per satuan (Rp)</label><input id="inPrice" type="number" min="0" value="0"></div><div class="field"><label>Supplier</label><input id="inSupplier"></div></div><label>Catatan</label><input id="inNote"><br><br><button onclick="saveStockIn()">Simpan Barang Masuk</button><div id="inMsg" class="message"></div></div>`;
+}
+async function saveStockIn(){const msg=document.getElementById('inMsg');try{await call('stockIn',TOKEN,{kode:document.getElementById('inCode').value,qty:document.getElementById('inQty').value,hargaBeli:document.getElementById('inPrice').value,supplier:document.getElementById('inSupplier').value,catatan:document.getElementById('inNote').value});PRODUCTS=await call('listProducts',TOKEN,'');msg.className='message success';msg.textContent='Barang masuk berhasil dicatat.'}catch(e){msg.textContent=e.message}}
+function renderReports(){
+  const today=new Date().toISOString().slice(0,10);
+  document.getElementById('main').innerHTML=`<h2>Laporan Penjualan</h2><div class="panel"><div class="row"><div class="field"><label>Dari tanggal</label><input id="dateStart" type="date" value="${today}"></div><div class="field"><label>Sampai tanggal</label><input id="dateEnd" type="date" value="${today}"></div><button onclick="loadReports()">Tampilkan</button><button class="secondary" onclick="downloadExcel()">Download Excel</button></div><div class="table-wrap" style="margin-top:15px"><table><thead><tr><th>ID Transaksi</th><th>Tanggal</th><th>Kasir</th><th>Total</th><th>Metode</th></tr></thead><tbody id="reportRows"></tbody></table></div></div>`;
+  loadReports();
+}
+async function loadReports(){try{const rows=await call('getSales',TOKEN,document.getElementById('dateStart').value,document.getElementById('dateEnd').value);document.getElementById('reportRows').innerHTML=rows.map(r=>`<tr><td>${esc(r.id)}</td><td>${esc(r.tanggal)}</td><td>${esc(r.kasir)}</td><td>${money(r.total)}</td><td>${esc(r.metode)}</td></tr>`).join('')||'<tr><td colspan="5">Belum ada transaksi pada tanggal tersebut.</td></tr>'}catch(e){alert(e.message)}}
+async function downloadExcel(){try{const r=await call('exportSalesExcel',TOKEN,document.getElementById('dateStart').value,document.getElementById('dateEnd').value);window.open(r.url,'_blank')}catch(e){alert(e.message)}}
+async function doLogout(){try{await call('logout',TOKEN)}catch(e){}TOKEN='';USER=null;CART=[];document.getElementById('appView').classList.add('hidden');document.getElementById('loginView').classList.remove('hidden')}
+</script>
+</body>
+</html>
